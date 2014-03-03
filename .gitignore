@@ -15,3 +15,6 @@ missing
 morituri.spec
 py-compile
 REVISION
+# By JDLH for Eclipse development
+.project
+.pydevproject
