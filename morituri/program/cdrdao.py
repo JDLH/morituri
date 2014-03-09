@@ -24,6 +24,7 @@
 import re
 import os
 import tempfile
+import platform
 
 from morituri.common import log, common
 from morituri.image import toc, table
@@ -271,6 +272,64 @@ class CDRDAOTask(ctask.PopenTask):
         else:
             raise ProgramFailedException(self._popen.returncode)
 
+    """
+    convertDevice( deviceMorituri=None ): deviceCdrdao
+
+    Accepts a device name (type: string) as used in the rest of Morituri.
+    Converts it to a device name (type: string) as used by the cli tool cdrdao.
+
+    On Linux, cdrdao can operate on a pathname such as "/dev/cdrom" just like
+    Morituri can, so this conversion is identity. (See Scsiif-linux.cc in cdrdao.)
+
+    On Mac OS X, cdrdao requires a device identifier which is either an index number
+    or a full IOKit path.  (See Scsiif-osx.cc in cdrdao.)
+
+    The index number is formatted as "%i,%i,%i", and the *sum* of these three integers
+    plus 1 is the index. e.g. "0,0,0" is index == 1.  This index, which is 1-based,
+    selects one of the devices, enumerated from the I/O Registry, with the property
+    kIOPropertySCSITaskDeviceCategory having value kIOPropertySCSITaskAuthoringDevice .
+    The following command line lists those I/O Registry entries:
+        ioreg -r -k SCSITaskDeviceCategory -d 1 -S -w 0
+    From the properties in each entry a developer can figure out which device it
+    represents. An end user of morituri cannot be expected to.
+
+    The full IOKit path is a long string, with the slash-separated entry names of the
+    path from I/O Registry to device leaf node. An example path (line breaks added):
+        IOService:/AppleACPIPlatformExpert/PCI0/AppleACPIPCI/EHC1@1D,7/AppleUSBEHCI/
+        USB Mass Storage Device @fd100000/IOUSBInterface@0/IOUSBMassStorageClass/
+        IOSCSIPeripheralDeviceNub/IOSCSIPeripheralDeviceType05/IODVDServices
+
+    If you unmount all CD/DVD volumes, then run the command
+        cdrdao scanbus
+    the result will be a list of devices, with the proper I/O Registry path for each,
+    in index number order. An end user of morituri cannot be expected to run this
+    command or understand the result. Morituri's code cannot be expected to derive an
+    I/O Registry path given a device file path (e.g. "/dev/rdisk3"), short of calling
+    Objective-C APIs directly (note: consider PyObjC https://pythonhosted.org/pyobjc/).
+
+    Thus, on Mac OS X this conversion always returns "0,0,0", meaning the first device.
+    Until this limitation is eased, don't expect to use more than one device with
+    morituri on a Mac.
+
+    On Windows, cdrdao requires a device identifier which is a SCSI address, formatted
+    as "%i:%i:%i". The three numbers are labeled haid_, lun_, and scsi_id_ . At
+    present this function is not tested on Windows, so it does an identity conversion.
+    (See Scsiif-win.cc in cdrdao.)
+
+    (For all the above source code references, look in methods ScsiIf::ScsiIf() and
+    ScsiIf::ScsiInit() in the named file. Available via http://cdrdao.sourceforge.net/ .
+    Current as of cdrdao version 1.2.3.)
+    """
+    def convertDevice(self, deviceMorituri ):
+        deviceCdrdao = deviceMorituri  # identity conversion if we don't know better
+        if platform.system()=='Darwin':
+            deviceCdrdao = "0,0,0"  # means index == 1 to cdrdao
+            self.debug('convertDevice(): Darwin platform; '
+                    'original device %s, normalised device %s'
+                    % (deviceMorituri, deviceCdrdao)
+            )
+        return deviceCdrdao
+
 
 class DiscInfoTask(CDRDAOTask):
     """
@@ -295,7 +354,7 @@ class DiscInfoTask(CDRDAOTask):
 
         self.options = ['disk-info', ]
         if device:
-            self.options.extend(['--device', device, ])
+            self.options.extend(['--device', self.convertDevice(device), ])
 
         self.parser = LineParser(self)
 
@@ -353,7 +412,7 @@ class ReadSessionTask(CDRDAOTask):
 
         self.options = ['read-toc', ]
         if device:
-            self.options.extend(['--device', device, ])
+            self.options.extend(['--device', self.convertDevice(device), ])
         if session:
             self.options.extend(['--session', str(session)])
             self.description = "%s of session %d..." % (
@@ -520,3 +579,4 @@ def getCDRDAOVersion():
         "%(version)s")
 
     return getter.get()
+
