@@ -27,6 +27,9 @@ Common functionality and class for all programs using morituri.
 import os
 import sys
 import time
+import platform
+import re
+import subprocess
 
 from morituri.common import common, log, mbngs, cache, path
 from morituri.program import cdrdao, cdparanoia
@@ -58,6 +61,11 @@ class Program(log.Loggable):
     result = None
 
     _stdout = None
+
+    _reDevDisk = None
+    # Regular expression to convert Darwin platform devices like /dev/rdisk1 into /dev/disk1
+    if platform.system() == 'Darwin':
+        _reDevDisk = re.compile(r'/dev/r?disk(\d+)')
 
     def __init__(self, config, record=False, stdout=sys.stdout):
         """
@@ -92,13 +100,25 @@ class Program(log.Loggable):
         """
         Load the given device.
         """
-        os.system('eject -t %s' % device)
+        if platform.system()=='Darwin':
+            self.debug('loadDevice(): Darwin platform device loading, i.e. tray closing')
+            self.debug('loadDevice(): original device %s, normalised device %s'
+                       % (device, self._reDevDisk.sub(device, r'/dev/disk\1', 1)))
+            os.system('drutil tray close -d %s' % self._reDevDisk.sub(device, r'/dev/disk\1', 1))
+        else:
+            os.system('eject -t %s' % device)
 
     def ejectDevice(self, device):
         """
         Eject the given device.
         """
-        os.system('eject %s' % device)
+        if platform.system()=='Darwin':
+            self.debug('loadDevice(): Darwin platform device ejection')
+            self.debug('loadDevice(): original device %s, normalised device %s'
+                       % (device, self._reDevDisk.sub(device, r'/dev/disk\1', 1)))
+            os.system('drutil eject -d %s' % self._reDevDisk.sub(device, r'/dev/disk\1', 1))
+        else:
+            os.system('eject %s' % device)
 
     def unmountDevice(self, device):
         """
@@ -107,9 +127,17 @@ class Program(log.Loggable):
 
         If the given device is a symlink, the target will be checked.
         """
+        self.debug('unmountDevice(): platform = %s' % platform.system() )
         device = os.path.realpath(device)
         self.debug('possibly unmount real path %r' % device)
-        proc = open('/proc/mounts').read()
+        if platform.system()=='Darwin':
+            self.debug('unmountDevice(): Darwin platform device unmount')
+            self.debug('unmountDevice(): original device %s, normalised device %s'
+                       % (device, self._reDevDisk.sub(device, r'/dev/disk\1', 1)))
+            device = self._reDevDisk.sub(device, r'/dev/disk\1', 1)
+            proc = subprocess.check_output('mount')
+        else:
+            proc = open('/proc/mounts').read()
         if device in proc:
             print 'Device %s is mounted, unmounting' % device
             os.system('umount %s' % device)
