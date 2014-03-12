@@ -281,7 +281,7 @@ class ReadTrackTask(log.Loggable, task.Task):
         argv = ["cdparanoia", "--stderr-progress",
             "--sample-offset=%d" % self._offset, ]
         if self._device:
-            argv.extend(["--force-cdrom-device", self._device, ])
+            argv.extend(["--force-cdrom-device", self._device.getRawPath(), ])
         argv.extend(["%d[%s]-%d[%s]" % (
                 startTrack, common.framesToHMSF(startOffset),
                 stopTrack, common.framesToHMSF(stopOffset)),
@@ -578,7 +578,7 @@ class AnalyzeTask(ctask.PopenTask):
         self.cwd = tempfile.mkdtemp(suffix='.morituri.cache')
         self.command = ['cdparanoia', '-A']
         if device:
-            self.command += ['-d', device]
+            self.command += ['-d', device.getRawPath()]
 
     def commandMissing(self):
         raise common.MissingDependencyException('cdparanoia')

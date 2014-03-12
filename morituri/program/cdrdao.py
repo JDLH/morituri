@@ -74,6 +74,9 @@ _POSITION_RE = re.compile(r"""
 
 _ERROR_RE = re.compile(r"""^ERROR: (?P<error>.*)""")
 
+# cdrdao give "ObtainExclusiveAccess failed" error on Mac OS X (Darwin) if CD is not dismounted.
+# Unfortunately Mac OS automounts CD after every CD operation on cdrdao, so it can easily happen.
+_EXCLUSIVE_RE = re.compile(r"""^ERROR: init: (?P<error>ObtainExclusiveAccess failed):""")
 
 class LineParser(object, log.Loggable):
     """
@@ -173,7 +176,9 @@ class OutputParser(object, log.Loggable):
                 self._buffer = ""
             for line in lines:
                 self.log('Parsing %s', line)
-                m = _ERROR_RE.search(line)
+                m = _EXCLUSIVE_RE.search(line)
+                if not m:
+                    m = _ERROR_RE.search(line)
                 if m:
                     error = m.group('error')
                     self._task.errors.append(error)
@@ -187,7 +192,7 @@ class OutputParser(object, log.Loggable):
 
     def _parse(self, lines):
         for line in lines:
-            #print 'parsing', len(line), line
+            self.debug( 'parsing (len %d): %r' % (len(line), line) )
             methodName = "_parse_" + self._state
             getattr(self, methodName)(line)
 
@@ -202,6 +207,14 @@ class OutputParser(object, log.Loggable):
                 self.debug('Found track line, moving to TRACK state')
                 self._state = 'TRACK'
                 return
+
+        m = _EXCLUSIVE_RE.search(line)
+        if m:
+            # Exclusive access failure: abort. Retrying won't fix it.
+            error = m.group('error')
+            self._task.errors.append(error)
+            self._task.exception = ProgramError(error)
+            self._task.abort()
 
         m = _ERROR_RE.search(line)
         if m:
@@ -251,16 +264,26 @@ class CDRDAOTask(ctask.PopenTask):
     logCategory = 'CDRDAOTask'
     description = "Reading TOC..."
     options = None
+    device = None
 
-    def __init__(self):
+    def __init__(self, device=None):
         self.errors = []
+        self.device = device
         self.debug('creating CDRDAOTask')
 
     def start(self, runner):
         self.debug('Starting cdrdao with options %r', self.options)
         self.command = ['cdrdao', ] + self.options
 
+        if self.device and platform.system()=='Darwin':
+            # if the device is mounted (data session), unmount it
+            self.debug('Unmounting device %s, due to Darwin automount\n' % self.device.getNotRawPath())
+
+            os.system('diskutil unmountDisk %s' % self.device.getNotRawPath())
+            # self.program.unmountDevice(self.device.getNotRawPath())
+
         ctask.PopenTask.start(self, runner)
+
 
     def commandMissing(self):
         raise common.MissingDependencyException('cdrdao')
@@ -321,12 +344,12 @@ class CDRDAOTask(ctask.PopenTask):
     Current as of cdrdao version 1.2.3.)
     """
     def convertDevice(self, deviceMorituri ):
-        deviceCdrdao = deviceMorituri  # identity conversion if we don't know better
+        deviceCdrdao = deviceMorituri.getRawPath()  # identity conversion if we don't know better
         if platform.system()=='Darwin':
             deviceCdrdao = "0,0,0"  # means index == 1 to cdrdao
             self.debug('convertDevice(): Darwin platform; '
                     'original device %s, normalised device %s'
-                    % (deviceMorituri, deviceCdrdao)
+                    % (deviceMorituri.getRawPath(), deviceCdrdao)
             )
         return deviceCdrdao
 
@@ -347,10 +370,10 @@ class DiscInfoTask(CDRDAOTask):
     def __init__(self, device=None):
         """
         @param device:  the device to rip from
-        @type  device:  str
+        @type  device:  program.device.Device()
         """
         self.debug('creating DiscInfoTask for device %r', device)
-        CDRDAOTask.__init__(self)
+        CDRDAOTask.__init__(self, device)
 
         self.options = ['disk-info', ]
         if device:
@@ -366,9 +389,19 @@ class DiscInfoTask(CDRDAOTask):
 
     def parse(self, line):
         # called by parser
+        self.debug('Parsing: %r' % line)
         if line.startswith('Sessions'):
             self.sessions = int(line[line.find(':') + 1:])
             self.debug('Found %d sessions', self.sessions)
+
+        m = _EXCLUSIVE_RE.search(line)
+        if m:
+            # Exclusive access failure: abort. Retrying won't fix it.
+            error = m.group('error')
+            self.errors.append(error)
+            self.exception = ProgramError(error)
+            self.abort()
+
         m = _ERROR_RE.search(line)
         if m:
             error = m.group('error')
@@ -403,7 +436,7 @@ class ReadSessionTask(CDRDAOTask):
         """
         self.debug('Creating ReadSessionTask for session %d on device %r',
             session, device)
-        CDRDAOTask.__init__(self)
+        CDRDAOTask.__init__(self, device)
         self.parser = OutputParser(self)
         (fd, self._tocfilepath) = tempfile.mkstemp(
             suffix=u'.readtablesession.morituri')
@@ -496,11 +529,12 @@ class ReadAllSessionsTask(task.MultiSeparateTask):
     logCategory = 'ReadAllSessionsTask'
     table = None
     _readClass = None
+    _device = None
 
     def __init__(self, device=None):
         """
         @param device:  the device to rip from
-        @type  device:  str
+        @type  device:  program.device.Device()
         """
         task.MultiSeparateTask.__init__(self)
 

@@ -32,7 +32,7 @@ gobject.threads_init()
 from morituri.common import logcommand, common, accurip, gstreamer
 from morituri.common import drive, program, task
 from morituri.result import result
-from morituri.program import cdrdao, cdparanoia
+from morituri.program import cdrdao, cdparanoia, device
 from morituri.rip import common as rcommon
 
 from morituri.extern.command import command
@@ -128,6 +128,8 @@ class _CD(logcommand.LogCommand):
         self.program.result.cdrdaoVersion = cdrdao.getCDRDAOVersion()
         self.program.result.cdparanoiaVersion = \
             cdparanoia.getCdParanoiaVersion()
+
+        self.debug('calling drive.getDeviceInfo("%s").' % self.parentCommand.options.device )
         info = drive.getDeviceInfo(self.parentCommand.options.device)
         if info:
             try:
@@ -146,7 +148,7 @@ class _CD(logcommand.LogCommand):
             import cdio
             _, self.program.result.vendor, self.program.result.model, \
                 self.program.result.release = \
-                cdio.Device(self.device).get_hwinfo()
+                cdio.Device(self.device.getName()).get_hwinfo()
         except ImportError:
             self.stdout.write(
                 'WARNING: pycdio not installed, cannot identify drive\n')
@@ -530,18 +532,19 @@ class CD(logcommand.LogCommand):
 
     def addOptions(self):
         self.parser.add_option('-d', '--device',
-            action="store", dest="device",
+            action="store", dest="deviceName",
             help="CD-DA device")
 
     def handleOptions(self, options):
-        if not options.device:
+        if not options.deviceName:
             drives = drive.getAllDevicePaths()
             if not drives:
                 self.error('No CD-DA drives found!')
                 return 3
 
             # pick the first
-            self.options.device = drives[0]
+            self.options.deviceName = drives[0]
 
-        # this can be a symlink to another device
-        self.options.device = os.path.realpath(self.options.device)
+        assert self.options.deviceName, 'Could not identify a device to use.'
+        self.options.device = device.Device(self.options.deviceName)
+        # this can be a symlink to another device, but Device() will take care of that if requested

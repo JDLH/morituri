@@ -25,7 +25,7 @@ import os
 from morituri.extern.task import task
 
 from morituri.common import logcommand, drive
-from morituri.program import cdparanoia
+from morituri.program import cdparanoia, device
 
 class Analyze(logcommand.LogCommand):
 
@@ -33,21 +33,22 @@ class Analyze(logcommand.LogCommand):
 
     def addOptions(self):
         self.parser.add_option('-d', '--device',
-            action="store", dest="device",
+            action="store", dest="deviceName",
             help="CD-DA device")
 
     def handleOptions(self, options):
-        if not options.device:
+        if not options.deviceName:
             drives = drive.getAllDevicePaths()
             if not drives:
                 self.error('No CD-DA drives found!')
                 return 3
 
             # pick the first
-            self.options.device = drives[0]
+            self.options.deviceName = drives[0]
 
-        # this can be a symlink to another device
-        self.options.device = os.path.realpath(self.options.device)
+        assert self.options.deviceName, 'Could not identify a device to use.'
+        self.options.device = device.Device(self.options.deviceName)
+        # this can be a symlink to another device, but Device() will take care of that
 
     def do(self, args):
         runner = task.SyncRunner()

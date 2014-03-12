@@ -28,7 +28,7 @@ gobject.threads_init()
 
 from morituri.common import logcommand, accurip, drive, program, common
 from morituri.common import task as ctask
-from morituri.program import cdrdao, cdparanoia
+from morituri.program import cdrdao, cdparanoia, device
 
 from morituri.extern.task import task
 
@@ -60,7 +60,7 @@ CD in the AccurateRip database."""
                 "colon-separated for ranges (defaults to %s)" % default,
             default=default)
         self.parser.add_option('-d', '--device',
-            action="store", dest="device",
+            action="store", dest="deviceName",
             help="CD-DA device")
 
     def handleOptions(self, options):
@@ -76,16 +76,18 @@ CD in the AccurateRip database."""
 
         self.debug('Trying with offsets %r', self._offsets)
 
-        if not options.device:
+        if not options.deviceName:
             drives = drive.getAllDevicePaths()
             if not drives:
                 self.error('No CD-DA drives found!')
                 return 3
 
             # pick the first
-            self.options.device = drives[0]
+            self.options.deviceName = drives[0]
 
-        # this can be a symlink to another device
+        assert self.options.deviceName, 'Could not identify a device to use.'
+        self.options.device = device.Device(self.options.deviceName)
+        # this can be a symlink to another device, but Device() will fix that
 
     def do(self, args):
         prog = program.Program(self.getRootCommand().config)

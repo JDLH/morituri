@@ -62,14 +62,6 @@ class Program(log.Loggable):
 
     _stdout = None
 
-    _DEVDISK_RE = None
-    _DEVNORM_RE = None
-    # Regular expression to convert Darwin platform devices like /dev/rdisk1
-    # into /dev/disk1
-    if platform.system() == 'Darwin':
-        _DEVDISK_RE = re.compile(r'/dev/r?disk(\d+)')
-        _DEVNORM_RE = r'/dev/disk\1'  # strips out the r in rdisk
-
     def __init__(self, config, record=False, stdout=sys.stdout):
         """
         @param record: whether to record results of API calls for playback.
@@ -105,12 +97,10 @@ class Program(log.Loggable):
         """
         if platform.system()=='Darwin':
             self.debug('loadDevice(): Darwin platform device loading, i.e. tray closing')
-            self.debug('loadDevice(): original device %s, normalised device %s'
-                       % (device, self._DEVDISK_RE.sub(self._DEVNORM_RE, device, 1)))
             os.system('drutil tray close -d %s'
-                      % self._DEVDISK_RE.sub(self._DEVNORM_RE, device, 1))
+                      % device.getNotRawPath())
         else:
-            os.system('eject -t %s' % device)
+            os.system('eject -t %s' % device.getName())
 
     def ejectDevice(self, device):
         """
@@ -118,11 +108,9 @@ class Program(log.Loggable):
         """
         if platform.system()=='Darwin':
             self.debug('loadDevice(): Darwin platform device ejection')
-            self.debug('loadDevice(): original device %s, normalised device %s'
-                       % (device, self._DEVDISK_RE.sub(self._DEVNORM_RE, device, 1)))
-            os.system('drutil eject -d %s' % self._DEVDISK_RE.sub(self._DEVNORM_RE, device, 1))
+            os.system('drutil eject -d %s' % device.getNotRawPath())
         else:
-            os.system('eject %s' % device)
+            os.system('eject %s' % device.getName())
 
     def unmountDevice(self, device):
         """
@@ -132,23 +120,21 @@ class Program(log.Loggable):
         If the given device is a symlink, the target will be checked.
         """
         self.debug('unmountDevice(): platform = %s' % platform.system() )
-        device = os.path.realpath(device)
-        self.debug('possibly unmount real path %r' % device)
         if platform.system()=='Darwin':
             self.debug('unmountDevice(): Darwin platform device unmount')
-            self.debug('unmountDevice(): original device %s, normalised device %s'
-                       % (device, self._DEVDISK_RE.sub(self._DEVNORM_RE, device, 1)))
-            device = self._DEVDISK_RE.sub(self._DEVNORM_RE, device, 1)
             proc = subprocess.check_output('mount')
+            target = device.getNotRawPath()
         else:
             proc = open('/proc/mounts').read()
-        if device in proc:
-            print 'Device %s is mounted, unmounting' % device
+            target = device.getRealPath()
+        self.debug('possibly unmount target path %r' % target)
+        if target in proc:
+            print 'Device %s is mounted, unmounting' % target
             if platform.system()=='Darwin':
                 # on Darwin, umount requires superuser, but diskutil does not
-                os.system('diskutil unmountDisk %s' % self._DEVDISK_RE.sub(self._DEVNORM_RE, device, 1))
+                os.system('diskutil unmountDisk %s' % target)
             else:
-                os.system('umount %s' % device)
+                os.system('umount %s' % target)
 
     def getFastToc(self, runner, toc_pickle, device):
         """
@@ -170,6 +156,8 @@ class Program(log.Loggable):
                     function(runner, t)
                     break
                 except:
+                    # FIXME some errors won't go away; we are better off
+                    # aborting so user can fix the problem.
                     if tries > 3:
                         raise
                     self.debug('failed to read TOC after %d tries, retrying' % tries)
@@ -200,6 +188,9 @@ class Program(log.Loggable):
             self.debug('getTable: cddbdiscid %s, mbdiscid %s not in cache, '
                 'reading table' % (
                 cddbdiscid, mbdiscid))
+
+            if device:
+                self.unmountDevice(device)  # cdrdao sometimes remounts disk
             t = cdrdao.ReadTableTask(device=device)
             runner.run(t)
             ptable.persist(t.table)
@@ -369,6 +360,8 @@ class Program(log.Loggable):
             try:
                 metadatas = mbngs.musicbrainz(mbdiscid,
                     record=self._record)
+                if metadatas:
+                    break       # we found metadata, so let's take "yes" for an answer
             except mbngs.NotFoundException, e:
                 break
             except musicbrainz.NetworkError, e:

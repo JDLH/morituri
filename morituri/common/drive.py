@@ -23,6 +23,7 @@
 import os
 
 from morituri.common import log
+from morituri.program import device as deviceModule
 
 
 def _listify(listOrString):
@@ -54,20 +55,25 @@ def _getAllDevicePathsPyCdio():
 def _getAllDevicePathsStatic():
     ret = []
 
-    for c in ['/dev/cdrom', '/dev/cdrecorder']:
+    for c in ['/dev/cdrom', '/dev/cdrecorder', '/dev/rdisk1']:
         if os.path.exists(c):
             ret.append(c)
 
     return ret
 
 
-def getDeviceInfo(path):
+def getDeviceInfo(device):
     try:
         import cdio
     except ImportError:
         return None
 
-    device = cdio.Device(path)
-    ok, vendor, model, release = device.get_hwinfo()
+    if isinstance(device, deviceModule.Device):
+        path = device.getName()
+    else:
+        path = device
+
+    deviceCDIO = cdio.Device(path)
+    ok, vendor, model, release = deviceCDIO.get_hwinfo()
 
     return (vendor, model, release)
