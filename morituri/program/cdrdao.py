@@ -25,6 +25,7 @@ import re
 import os
 import tempfile
 import platform
+import subprocess
 
 from morituri.common import log, common
 from morituri.image import toc, table
@@ -277,10 +278,12 @@ class CDRDAOTask(ctask.PopenTask):
 
         if self.device and platform.system()=='Darwin':
             # if the device is mounted (data session), unmount it
-            self.debug('Unmounting device %s, due to Darwin automount\n' % self.device.getNotRawPath())
-
-            os.system('diskutil unmountDisk %s' % self.device.getNotRawPath())
-            # self.program.unmountDevice(self.device.getNotRawPath())
+            proc = subprocess.check_output('mount')
+            target = self.device.getNotRawPath()
+            if target in proc:
+                self.debug('Unmounting device %s, due to Darwin automount\n' % self.device.getNotRawPath())
+                # on Darwin, umount requires superuser, but diskutil does not
+                os.system('diskutil unmountDisk %s' % target)
 
         ctask.PopenTask.start(self, runner)
 

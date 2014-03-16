@@ -68,7 +68,7 @@ class _CD(logcommand.LogCommand):
 
         # if the device is mounted (data session), unmount it
         self.device = self.parentCommand.options.device
-        self.stdout.write('Checking device %s\n' % self.device)
+        self.stdout.write('Checking device %s\n' % self.device.getName())
 
         self.program.loadDevice(self.device)
         self.program.unmountDevice(self.device)
@@ -143,18 +143,14 @@ class _CD(logcommand.LogCommand):
         self.program.result.title = self.program.metadata \
             and self.program.metadata.title \
             or 'Unknown Title'
-        # cdio is optional for now
-        try:
-            import cdio
-            _, self.program.result.vendor, self.program.result.model, \
-                self.program.result.release = \
-                cdio.Device(self.device.getName()).get_hwinfo()
-        except ImportError:
+
+        if not info:
             self.stdout.write(
-                'WARNING: pycdio not installed, cannot identify drive\n')
-            self.program.result.vendor = 'Unknown'
-            self.program.result.model = 'Unknown'
-            self.program.result.release = 'Unknown'
+                'WARNING: pycdio not installed or not working. Cannot identify drive\n')
+            info = ('Unknown', 'Unknown', 'Unknown')
+
+        self.program.result.vendor, self.program.result.model, \
+                self.program.result.release = info
 
         self.doCommand()
 

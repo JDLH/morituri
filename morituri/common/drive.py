@@ -21,6 +21,7 @@
 # along with morituri.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import time
 
 from morituri.common import log
 from morituri.program import device as deviceModule
@@ -73,7 +74,28 @@ def getDeviceInfo(device):
     else:
         path = device
 
+    # On Darwin (Mac OS X), sometimes libcdio will lose access to CD drive,
+    # if it has just been busy with another task. os.stat(path) tests for
+    # this. If stat returns an OSError #2, the CD drive is inaccessible for now.
+    # On my system, 0.5 seconds wait is long enough for the drive to reappear.
+    # But have a few longer delays in reserve.
+
+    delays = [0.5, 2, 10]  # seconds to wait after each failed attempt
+    while True:
+        try:
+            os.stat(path)  # sometimes cdio loses access to device on Darwin
+            break  # if no exception, then device is available
+        except OSError:
+            # print 'getDeviceInfo: os.stat(%s) failed' % path,
+            if len(delays) == 0:
+                # print 'returning None from getDeviceInfo()'
+                return None
+            # print 'waiting for %f seconds' % delays[0],
+            time.sleep(delays[0])
+            delays = delays[1:]
+            # print 'and trying os.stat() again.'
+
     deviceCDIO = cdio.Device(path)
-    ok, vendor, model, release = deviceCDIO.get_hwinfo()
+    _, vendor, model, release = deviceCDIO.get_hwinfo()
 
     return (vendor, model, release)

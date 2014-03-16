@@ -28,6 +28,7 @@ import stat
 import shutil
 import subprocess
 import tempfile
+import platform
 
 from morituri.common import log, common
 from morituri.common import task as ctask
@@ -190,6 +191,9 @@ class ProgressParser(log.Loggable):
         Each frame gets read twice.
         More than two reads for a frame reduce track quality.
         """
+        if self.read == 0:  # sometimes ReadTrackTask returns with 0 reads.
+            return 0.0  # shortcut return to avoid divide by zero error
+
         frames = self.stop - self.start + 1 # + 1 since stop is inclusive
         reads = self.reads
         self.debug('getTrackQuality: frames %d, reads %d' % (frames, reads))
@@ -280,6 +284,8 @@ class ReadTrackTask(log.Loggable, task.Task):
         bufsize = 1024
         argv = ["cdparanoia", "--stderr-progress",
             "--sample-offset=%d" % self._offset, ]
+        # for diagnostics, set -v (verbose) and -L (detailed logfile, named cdparanoia_offset_123.log )
+        # argv.extend(["-v", "-Lcdparanoia_offset_%d.log" % self._offset]) # for diagnostics
         if self._device:
             argv.extend(["--force-cdrom-device", self._device.getRawPath(), ])
         argv.extend(["%d[%s]-%d[%s]" % (
@@ -305,7 +311,11 @@ class ReadTrackTask(log.Loggable, task.Task):
     def _read(self, runner):
         ret = self._popen.recv_err()
         if not ret:
-            if self._popen.poll() is not None:
+            retPoll = self._popen.poll()
+            if retPoll is not None:
+                self.debug('ReadTrackTask .poll() returns %r, child process finished.' % retPoll)
+                if len(self._buffer) == 0:
+                    self.warning('ReadTrackTask finished with nothing read. .poll() returned %r' % retPoll)
                 self._done()
                 return
             self.schedule(0.01, self._read, runner)
