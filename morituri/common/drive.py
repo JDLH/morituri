@@ -78,7 +78,7 @@ def getDeviceInfo(device):
     # if it has just been busy with another task. os.stat(path) tests for
     # this. If stat returns an OSError #2, the CD drive is inaccessible for now.
     # On my system, 0.5 seconds wait is long enough for the drive to reappear.
-    # But have a few longer delays in reserve.
+    # But we have a few longer delays in reserve.
 
     delays = [0.5, 2, 10]  # seconds to wait after each failed attempt
     while True:

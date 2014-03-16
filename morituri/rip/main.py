@@ -31,8 +31,14 @@ def main(argv):
 
     # validate dependencies
     from morituri.common import deps
-    h = deps.DepsHandler()
-    h.validate()
+    from morituri.extern.deps import deps as edeps
+
+    try:
+        h = deps.DepsHandler()
+        h.validate()
+    except edeps.DependencyError, e:
+        h.handleImportError(e)
+        return 255
 
     # set user agent
     from morituri.extern.musicbrainzngs import musicbrainz
