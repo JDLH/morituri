@@ -35,12 +35,11 @@ Created on Mar 10, 2014
 
 import re
 import os
-import tempfile
 import platform
 
 from morituri.common import log
 
-_DEVPATH_RE    = None
+_DEVDISK_RE    = None
 _DEVRAW_RE     = None
 _DEVNOTRAW_RE  = None
 
